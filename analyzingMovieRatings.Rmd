@@ -1,0 +1,238 @@
+---
+title: "**Analyzing Movie Ratings**"
+author: "*Eric Nguyen*"
+date: "*2025-04-25*"
+output: html_document
+---
+
+``` {r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### **General Introduction of the Project**
+#### Introduction
+In this project, we'll analyze movie ratings data from IMDb using web scraping techniques in R. We'll extract information such as titles, release years, runtimes, genres, ratings, and vote counts for the top 30 movies released between March and July 2020.
+
+#### Purpose
+Using packages like `rvest` and `dplyr`, we'll practice loading web pages, identifying CSS selectors, and extracting specific data elements. We'll also gain experience in data cleaning by handling missing values. Finally, we'll use `ggplot2` to visualize the relationship between user ratings and number of votes, uncovering trends in movie popularity and reception. This project offers hands-on experience in web scraping, data manipulation, and visualization using R, skills that are highly valuable in real-world data analysis scenarios.
+
+#### Future Developmens
+
+#### Libraries used
+`rvest`, `dplyr`, `ggplot2`, `stringr`, `readr`, `tibble`
+
+### **Implementing**
+#### Loading libraries
+``` {r, message = FALSE, warning = FALSE}
+library(rvest)
+library(dplyr)
+library(ggplot2)
+library(stringr)
+library(readr)
+library(tibble)
+```
+
+#### Specifying the URL where we will extract the video datas from
+``` {r}
+url <- "http://dataquestio.github.io/web-scraping-pages/IMDb-DQgp.html"
+```
+
+#### Loading the web page content using the `read_html()` function
+``` {r}
+web_content <- read_html(url)
+```
+
+#### Website Scraping
+To scrape this web, we'll need a strategy. There are some things we can learn from observing the web:
+
+* The blocks from one movie to another are similar; hence, if we can understand a block structure, we'll likely understand the overall structure.
+
+* There are some missing values. Specially, the ratings and user votes are missing for some movies.
+
+**Movies' Names**
+``` {r}
+title_selector <- ".lister-item-header a"
+n_title <- 30
+titles <- web_content %>%
+  html_nodes(title_selector) %>%
+  html_text()
+
+titles
+```
+
+**Movies' Release Years**
+``` {r}
+release_year_selector <- ".lister-item-year"
+n_release_year <- 30
+release_years <- web_content %>%
+  html_nodes(release_year_selector) %>%
+  html_text()
+
+release_years
+```
+
+We will convert the years from character to numeric data type.
+``` {r}
+release_years <- parse_number(release_years)
+
+release_years
+```
+
+**Movies' Runtimes**
+``` {r}
+runtime_selector <- ".runtime"
+n_runtime <- 30
+runtimes <- web_content %>%
+  html_nodes(runtime_selector) %>%
+  html_text()
+
+runtimes
+```
+
+Since all runtime values are displayed by `min` (minutes), we can remove the time unit and convert the values to numeric data type.
+
+``` {r}
+runtimes <- parse_number(runtimes)
+
+runtimes
+```
+
+**Movies' Genres**
+``` {r}
+genre_selector <- ".genre"
+n_genre <- 30
+genres <- web_content %>%
+  html_nodes(genre_selector) %>%
+  html_text()
+
+genres
+```
+
+There seems to be addition whitespaces at the end of the values. Removing them will be better for future analyzing.
+
+``` {r}
+genres <- str_trim(genres)
+
+genres
+```
+
+**Movies' Ratings**
+``` {r}
+rating_selector <- ".ratings-imdb-rating"
+n_rating <- 30
+ratings <- web_content %>%
+  html_nodes(rating_selector) %>%
+  html_text()
+
+ratings
+```
+
+The rating values have extra `\n` texts and whitespaces, so we'll need to remove them.
+
+```{r}
+ratings <- str_trim(ratings)
+ratings <- parse_number(ratings)
+
+ratings
+```
+
+**Movies' Metascores**
+``` {r}
+metascore_selector <- ".metascore"
+n_metascore <- 30
+metascores <- web_content %>%
+  html_nodes(metascore_selector) %>%
+  html_text()
+
+metascores
+```
+
+We'll remove the extra whitespaces, as well.
+
+``` {r}
+metascores <- str_trim(metascores)
+
+metascores
+```
+
+**Movies' Votes**
+``` {r}
+vote_selector <- ".sort-num_votes-visible :nth-child(2)"
+n_vote = 30
+votes <- web_content %>%
+  html_nodes(vote_selector) %>%
+  html_text()
+
+votes
+```
+
+We'll convert those values into numeric data type.
+
+``` {r}
+votes <- parse_number(votes)
+
+votes
+```
+
+
+#### Handling *missing values*
+As usual, we will now combine all the extracted datas into a dataset using `tibble`. However, there are multiple missing values, so this operation will throw an error. Therefore, a handling-missing-values process has to be carried out.
+
+The *metascore* datas are missing a lot. We can handle this by replacing them with `NA values`.
+
+However, appending values into vectors is **not normally possible** in R. Consequently, we will have to implement our own function.
+
+``` {r}
+append_vector <- function(vector, inserted_indices, values){
+
+  ## Creating the current indices of the vector
+  vector_current_indices <- 1:length(vector)
+
+  ## Adding small amount of values (between 0 and 0.9) to the `inserted_indices`
+  new_inserted_indices <- inserted_indices + seq(0, 0.9, length.out = length(inserted_indices))
+
+  ## Appending the `new_inserted_indices` to the current vector indices
+  indices <- c(vector_current_indices, new_inserted_indices)
+
+  ## Ordering the indices
+  ordered_indices <- order(indices)
+
+  ## Appending the new value to the existing vector
+  new_vector <- c(vector, values)
+
+  ## Ordering the new vector wrt the ordered indices
+  new_vector[ordered_indices]
+}
+```
+
+Now, we can easily add the `NA values`.
+
+``` {r}
+metascores <- append_vector(metascores, c(1, 1, 1, 13, 24), NA)
+
+metascores
+```
+
+Exploring the website again, we notice that the 17th movie is a big problem since it barely has any useful datas. Therefore, we'll remove the movie.
+
+``` {r}
+titles <- titles[-17]
+release_years <- release_years[-17]
+runtimes <- runtimes[-17]
+genres <- genres[-17]
+metascores <- metascores[-17]
+```
+
+#### Putting everything *altogether*
+``` {r}
+movie_df <- tibble(titles, release_years, runtimes, genres, metascores)
+
+head(movie_df, 10)
+```
+
+#### Visualizing
+``` {r}
+ggplot(data = movie_df,
+       aes(x = ratings, y = votes, group = ratings)) +
+  geom_boxplot()
+```
